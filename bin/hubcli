@@ -1,0 +1,180 @@
+import requests
+import json
+import os
+import argparse
+import yaml
+import os.path
+
+url = 'https://hub.docker.com/v2'
+
+DEBUG = False
+
+token = None
+
+
+def makeHeaders():
+    headers = {
+        'Content-Type': 'application/json'
+    }
+    if token:
+        headers['Authorization'] = 'JWT %s' % token
+
+    return headers
+
+
+def makePost(resource, data, headers={}, hide_data=False):
+    h = makeHeaders()
+    h.update(headers)
+    u = '%s/%s' % (url, resource)
+    d = json.dumps(data)
+    if DEBUG:
+        if hide_data:
+            print 'POST %s: *** HIDDEN ***' % u
+        else:
+            print 'POST %s: %s' % (u, d)
+    return requests.post(u, data=d, headers=h)
+
+
+def makeGet(resource, headers={}):
+    h = makeHeaders()
+    h.update(headers)
+    u = '%s/%s' % (url, resource)
+    if DEBUG:
+        print 'GET %s' % u
+    return requests.get(u, headers=h)
+
+
+def makePut(resource, headers={}):
+    h = makeHeaders()
+    h.update(headers)
+    u = '%s/%s' % (url, resource)
+    if DEBUG:
+        print 'PUT %s' % u
+    return requests.put(u, headers=h)
+
+
+def makeDelete(resource, headers={}):
+    h = makeHeaders()
+    h.update(headers)
+    u = '%s/%s' % (url, resource)
+    if DEBUG:
+        print 'DELETE %s' % u
+    return requests.delete(u, headers=h)
+
+
+def login(login_creds):
+    r = makePost('users/login', login_creds, hide_data=True)
+    data = r.json()
+    return data.get('token')
+
+
+def list_repos(namespace):
+    r = makeGet('users/%s/repositories' % namespace)
+    return r.json()
+
+
+def create_repo(repo, is_private=True):
+    namespace, name = repo.split('/')
+    data = {
+        'name': name,
+        'namespace': namespace,
+        'is_private': is_private
+    }
+    r = makePost('repositories/', data)
+    return r.json()
+
+
+def delete_repo(repo):
+    r = makeDelete('repositories/%s' % repo)
+    return r
+
+
+def list_groups(repo):
+    r = makeGet('repositories/%s/groups' % repo)
+    data = r.json()
+    return data.get('results', [])
+
+
+def set_groups(repo, group_info):
+    r = makePost('repositories/%s/groups/' % repo, group_info)
+    return r.json()
+
+
+def group_details(repo, group):
+    r = makeGet('repositories/%s/groups/%s/' % (repo, group))
+    return r.json()
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("namespace", help="namespace to work within", type=str)
+    parser.add_argument("--repo", help="specify repository", type=str)
+    parser.add_argument("--create", help="create repository", action="store_true")
+    parser.add_argument("--delete", help="delete repository", action="store_true")
+    parser.add_argument("--list", help="list repositories", action="store_true")
+    parser.add_argument("--permissions", help="get permissions for repository", action="store_true")
+    parser.add_argument("--set-permissions", help="set permissions for repository from Yaml file", type=str)
+    parser.add_argument("--debug", help="turn on debugging", action="store_true")
+    parser.add_argument("--user", help="docker hub user", type=str)
+    parser.add_argument("--password", help="docker hub password", type=str)
+    args = parser.parse_args()
+
+    if not args.namespace:
+        print "Namespace is required"
+        exit(1)
+
+    login_creds = {'username': os.getenv('DOCKERHUB_USER'), 'password': os.getenv('DOCKERHUB_PASSWORD')}
+    if args.user and args.password:
+        login_creds['username'] = args.user
+        login_creds['password'] = args.password
+
+    # login to docker hub and get our token
+    token = login(login_creds)
+
+    # turn on debugging
+    if args.debug:
+        DEBUG = True
+
+    # set repo variable if specified
+    repo = False
+    if args.repo:
+        repo = '%s/%s' % (args.namespace, args.repo)
+
+    # create a repo
+    if args.create and repo:
+        print "Creating repository %s" % repo
+        create_repo(repo)
+
+    # set permissions for repo from yaml file
+    if args.set_permissions and repo:
+        print "Setting permissions for repository %s from %s" % (repo, args.set_permissions)
+        if not os.path.isfile(args.set_permissions):
+            print "%s does not exist" % args.set_permissions
+            exit(1)
+        permissions = {}
+        with open(args.set_permissions, 'r') as stream:
+            try:
+                permissions = yaml.load(stream)
+            except yaml.YAMLError as exc:
+                print(exc)
+                exit(1)
+        for group in permissions.get('collaborators', []):
+            set_groups(repo, group)
+
+    # list repos
+    if args.list:
+        print "Listing repositories for %s" % args.namespace
+        for repo in list_repos(args.namespace):
+            print '%s/%s' % (repo['namespace'], repo['name'])
+
+    # get permissions for repo, write as Yaml
+    if args.permissions and repo:
+        out = {'collaborators': []}
+        for group in list_groups(repo):
+            out['collaborators'].append(group)
+        print yaml.safe_dump(out, explicit_start=True, default_flow_style=False)
+
+    # delete repository
+    if args.delete and repo:
+        print "Deleting repository %s" % repo
+        delete_repo(repo)

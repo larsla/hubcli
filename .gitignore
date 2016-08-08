@@ -1,0 +1,4 @@
+build/
+dist/
+hubcli.egg-info/
+venv
