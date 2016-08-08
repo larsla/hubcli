@@ -1,5 +1,10 @@
 # hubcli - CLI tool for Docker Hub
 
+## installation
+```
+pip install hubcli
+```
+
 ## login
 You can either provide environment variables or use the cli options.
 ```
