@@ -27,5 +27,5 @@ hubcli myorganization --repo myrepo --permissions
 hubcli myorganization --repo myrepo  --set-permissions permissions.yml
 
 ## create repo and copy permissions from an existing repo (recommended way of handling permissions)
-hubcli myorganization --repo existingrepo --permissions >permissions.yml
+hubcli myorganization --repo existingrepo --permissions >permissions.yml  
 hubcli myorganization --repo newrepo --create --set-permissions permissions.yml
